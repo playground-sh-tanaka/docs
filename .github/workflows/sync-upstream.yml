@@ -1,0 +1,38 @@
+name: Sync upstream github/docs
+
+on:
+  schedule:
+    # JST 09:00 / 21:00 に実行（UTC 00:00 / 12:00）
+    - cron: "0 0,12 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout fork repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: main
+
+      - name: Add upstream remote
+        run: |
+          git remote add upstream https://github.com/github/docs.git
+          git remote -v
+
+      - name: Fetch upstream
+        run: |
+          git fetch upstream main
+
+      - name: Sync main with upstream/main (hard reset)
+        run: |
+          git checkout main
+          git reset --hard upstream/main
+
+      - name: Push synced main to fork
+        run: |
+          git push origin main --force
