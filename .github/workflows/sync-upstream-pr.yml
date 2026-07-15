@@ -23,12 +23,75 @@ jobs:
         run: |
           git remote add upstream https://github.com/github/docs.git
           git fetch upstream main
+          git fetch origin main
 
       - name: Update sync branch to upstream/main
         run: |
           BRANCH="sync/upstream-main"
           git checkout -B "$BRANCH" upstream/main
           git push origin "$BRANCH" --force
+
+      - name: Check diff (main...sync/upstream-main)
+        id: diff
+        run: |
+          COUNT=$(git rev-list --right-only --count origin/main...sync/upstream-main)
+          echo "count=$COUNT" >> "$GITHUB_OUTPUT"
+
+      - name: Write workflow summary (grouped by change type)
+        run: |
+          {
+            echo "## Upstream sync result"
+            echo ""
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "${{ steps.diff.outputs.count }}" = "0" ]; then
+            echo "✅ 差分はなかった。PRは作成していない。" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          {
+            echo "🟡 差分が ${{ steps.diff.outputs.count }} commit ある。"
+            echo ""
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          git diff --name-status origin/main...sync/upstream-main > /tmp/changes.txt
+
+          add_count=$(awk '$1 ~ /^A/ {c++} END {print c+0}' /tmp/changes.txt)
+          mod_count=$(awk '$1 ~ /^M/ {c++} END {print c+0}' /tmp/changes.txt)
+          del_count=$(awk '$1 ~ /^D/ {c++} END {print c+0}' /tmp/changes.txt)
+          ren_count=$(awk '$1 ~ /^R/ {c++} END {print c+0}' /tmp/changes.txt)
+
+          if [ "$add_count" -gt 0 ]; then
+            {
+              echo "### 追加"
+              awk '$1 ~ /^A/ {printf("- `%s`\n", $2)}' /tmp/changes.txt
+              echo ""
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          if [ "$mod_count" -gt 0 ]; then
+            {
+              echo "### 更新"
+              awk '$1 ~ /^M/ {printf("- `%s`\n", $2)}' /tmp/changes.txt
+              echo ""
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          if [ "$del_count" -gt 0 ]; then
+            {
+              echo "### 削除"
+              awk '$1 ~ /^D/ {printf("- `%s`\n", $2)}' /tmp/changes.txt
+              echo ""
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          if [ "$ren_count" -gt 0 ]; then
+            {
+              echo "### リネーム"
+              awk '$1 ~ /^R/ {printf("- `%s` → `%s`\n", $2, $3)}' /tmp/changes.txt
+              echo ""
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Create or update PR
         id: cpr
