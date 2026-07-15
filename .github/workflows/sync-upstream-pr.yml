@@ -1,0 +1,59 @@
+name: Sync upstream via PR (auto-merge)
+
+on:
+  schedule:
+    - cron: "0 0,12 * * *" # UTC 00:00/12:00 (JST 09:00/21:00)
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout fork (main)
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Add upstream
+        run: |
+          git remote add upstream https://github.com/github/docs.git
+          git fetch upstream main
+
+      - name: Update sync branch to upstream/main
+        run: |
+          BRANCH="sync/upstream-main"
+          git checkout -B "$BRANCH" upstream/main
+          git push origin "$BRANCH" --force
+
+      - name: Create or update PR
+        id: cpr
+        uses: peter-evans/create-pull-request@v8
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          branch: sync/upstream-main
+          base: main
+          title: "chore(sync): update from github/docs main"
+          body: |
+            Automated upstream sync PR.
+            - source: https://github.com/github/docs
+            - branch: main
+          commit-message: "chore(sync): update from upstream main"
+          delete-branch: false
+
+      - name: Enable auto-merge (squash)
+        # PRが作成/更新されたときのみ実行
+        if: ${{ steps.cpr.outputs.pull-request-number != '' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ steps.cpr.outputs.pull-request-number }}
+          REPO: ${{ github.repository }}
+        run: |
+          gh pr merge "$PR_NUMBER" \
+            --repo "$REPO" \
+            --squash \
+            --auto
